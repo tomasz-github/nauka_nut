@@ -4,7 +4,7 @@ import { ActiveNote, ClefType } from '../types';
 interface StaffViewProps {
   note: ActiveNote | null;
   clef: ClefType;
-  keySignature?: 'none' | 'F' | 'G' | 'Gm' | 'Am' | 'Em';
+  keySignature?: 'none' | 'F' | 'G' | 'Gm' | 'Em';
   status: 'idle' | 'correct' | 'wrong';
 }
 

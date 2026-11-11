@@ -32,8 +32,8 @@ export default function App() {
     details?: string;
   }>({ type: null, text: '' });
 
-  const [highlightCorrectKey, setHighlightCorrectKey] = useState<string | null>(null);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [highlightCorrectPitchClass, setHighlightCorrectPitchClass] = useState<number | null>(null);
+  const [activeKeyId, setActiveKeyId] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isWinModalOpen, setIsWinModalOpen] = useState<boolean>(false);
 
@@ -48,14 +48,71 @@ export default function App() {
     setStreak(0);
     setIsPaused(false);
     setVerificationStatus('idle');
-    setHighlightCorrectKey(null);
+    setHighlightCorrectPitchClass(null);
     setFeedbackMessage({ type: null, text: '' });
     setIsWinModalOpen(false);
 
-    let rawNotes = [];
+    let rawNotes: typeof ALL_NOTES = [];
     if (lvlId.startsWith('3_')) {
-      // Level 3 uses base level 1 notes with key signatures
-      rawNotes = ALL_NOTES.filter((n) => n.level === '1');
+      // Level 3 uses base level 1 notes with key signatures applied
+      const baseNotes = ALL_NOTES.filter((n) => n.level === '1');
+      const cfg = LEVELS.find((l) => l.id === lvlId);
+      const ks = cfg?.keySignature || 'none';
+
+      rawNotes = baseNotes.map((n) => {
+        // F-dur: B-flat (H becomes B)
+        if (ks === 'F' && n.name === 'H') {
+          return {
+            ...n,
+            pitchClass: 10,
+            displayName: 'B',
+            polishFullName: 'B (obniżone H przez bemol przykluczowy)',
+            freq: n.freq * (466.16 / 493.88),
+          };
+        }
+        // G-dur: F-sharp (F becomes Fis)
+        if (ks === 'G' && n.name === 'F') {
+          return {
+            ...n,
+            pitchClass: 6,
+            displayName: 'Fis',
+            polishFullName: 'Fis (podwyższone F przez krzyżyk przykluczowy)',
+            freq: n.freq * (369.99 / 349.23),
+          };
+        }
+        // g-moll: B-flat & E-flat (H becomes B, E becomes Es)
+        if (ks === 'Gm') {
+          if (n.name === 'H') {
+            return {
+              ...n,
+              pitchClass: 10,
+              displayName: 'B',
+              polishFullName: 'B (obniżone H przez znak przykluczowy)',
+              freq: n.freq * (466.16 / 493.88),
+            };
+          }
+          if (n.name === 'E') {
+            return {
+              ...n,
+              pitchClass: 3,
+              displayName: 'Es',
+              polishFullName: 'Es (obniżone E przez znak przykluczowy)',
+              freq: n.freq * (311.13 / 329.63),
+            };
+          }
+        }
+        // e-moll: F-sharp (F becomes Fis)
+        if (ks === 'Em' && n.name === 'F') {
+          return {
+            ...n,
+            pitchClass: 6,
+            displayName: 'Fis',
+            polishFullName: 'Fis (podwyższone F przez znak przykluczowy)',
+            freq: n.freq * (369.99 / 349.23),
+          };
+        }
+        return n;
+      });
     } else {
       rawNotes = ALL_NOTES.filter((n) => n.level === lvlId);
     }
@@ -98,7 +155,7 @@ export default function App() {
 
       setIsPaused(false);
       setVerificationStatus('idle');
-      setHighlightCorrectKey(null);
+      setHighlightCorrectPitchClass(null);
       setFeedbackMessage({ type: null, text: '' });
 
       const totalWeight = currentPool.reduce((sum, item) => sum + item.weight, 0);
@@ -119,15 +176,15 @@ export default function App() {
     []
   );
 
-  // Verification logic
-  const handleSelectNote = useCallback(
-    (selectedNote: string) => {
+  // Verification logic based on pitchClass (ensures Des, Es, Cis, etc. work 100% accurately)
+  const handleSelectKey = useCallback(
+    (selectedPitchClass: number, _baseNoteName: string, keyId: string) => {
       if (isPaused || !currentNote) return;
 
-      setActiveKey(selectedNote);
-      setTimeout(() => setActiveKey(null), 200);
+      setActiveKeyId(keyId);
+      setTimeout(() => setActiveKeyId(null), 200);
 
-      const isCorrect = selectedNote.toUpperCase() === currentNote.name.toUpperCase();
+      const isCorrect = selectedPitchClass === currentNote.pitchClass;
 
       if (isCorrect) {
         // CORRECT ANSWER
@@ -178,7 +235,7 @@ export default function App() {
         setStreak(0);
         setIsPaused(true);
         setVerificationStatus('wrong');
-        setHighlightCorrectKey(currentNote.name);
+        setHighlightCorrectPitchClass(currentNote.pitchClass);
 
         // Double weight (2x more probable)
         const updatedPool = pool.map((n) =>
@@ -188,10 +245,12 @@ export default function App() {
         );
         setPool(updatedPool);
 
+        const correctDisplayName = currentNote.displayName || currentNote.name;
+
         setFeedbackMessage({
           type: 'wrong',
-          text: `Błąd! Poprawna nuta to: ${currentNote.name}`,
-          noteName: currentNote.name,
+          text: `Błąd! Poprawna nuta to: ${correctDisplayName}`,
+          noteName: correctDisplayName,
           details: currentNote.polishFullName
             ? `(${currentNote.polishFullName})`
             : currentNote.octaveName
@@ -232,17 +291,54 @@ export default function App() {
       }
 
       const key = e.key.toUpperCase();
-      const validNotes = ['C', 'D', 'E', 'F', 'G', 'A', 'H', 'B'];
 
-      if (validNotes.includes(key)) {
+      // White key mapping
+      const whiteKeyMap: Record<string, { pitchClass: number; keyId: string; note: string; freq: number }> = {
+        C: { pitchClass: 0, keyId: 'C1', note: 'C', freq: 261.63 },
+        D: { pitchClass: 2, keyId: 'D1', note: 'D', freq: 293.66 },
+        E: { pitchClass: 4, keyId: 'E1', note: 'E', freq: 329.63 },
+        F: { pitchClass: 5, keyId: 'F1', note: 'F', freq: 349.23 },
+        G: { pitchClass: 7, keyId: 'G1', note: 'G', freq: 392.00 },
+        A: { pitchClass: 9, keyId: 'A1', note: 'A', freq: 440.00 },
+        H: { pitchClass: 11, keyId: 'H1', note: 'H', freq: 493.88 },
+        B: { pitchClass: 10, keyId: 'Bb1_As1', note: 'B', freq: 466.16 }, // Polish B = H♭
+      };
+
+      // Black key mapping shortcuts:
+      // 1 or W -> Cis / Des (pitchClass 1)
+      // 2 or S -> Dis / Es (pitchClass 3)
+      // 3 or T -> Fis / Ges (pitchClass 6)
+      // 4 or Y or Z -> Gis / As (pitchClass 8)
+      // 5 or U -> Ais / B (pitchClass 10)
+      const blackKeyMap: Record<string, { pitchClass: number; keyId: string; note: string; freq: number }> = {
+        '1': { pitchClass: 1, keyId: 'Db1_Cs1', note: 'C', freq: 277.18 },
+        W: { pitchClass: 1, keyId: 'Db1_Cs1', note: 'C', freq: 277.18 },
+        '2': { pitchClass: 3, keyId: 'Eb1_Ds1', note: 'D', freq: 311.13 },
+        '3': { pitchClass: 6, keyId: 'Gb1_Fs1', note: 'F', freq: 369.99 },
+        T: { pitchClass: 6, keyId: 'Gb1_Fs1', note: 'F', freq: 369.99 },
+        '4': { pitchClass: 8, keyId: 'Ab1_Gs1', note: 'G', freq: 415.30 },
+        Y: { pitchClass: 8, keyId: 'Ab1_Gs1', note: 'G', freq: 415.30 },
+        Z: { pitchClass: 8, keyId: 'Ab1_Gs1', note: 'G', freq: 415.30 },
+        '5': { pitchClass: 10, keyId: 'Bb1_As1', note: 'A', freq: 466.16 },
+        U: { pitchClass: 10, keyId: 'Bb1_As1', note: 'A', freq: 466.16 },
+      };
+
+      if (blackKeyMap[key]) {
         e.preventDefault();
-        handleSelectNote(key);
+        const k = blackKeyMap[key];
+        soundEngine.playNote(k.freq, 0.7);
+        handleSelectKey(k.pitchClass, k.note, k.keyId);
+      } else if (whiteKeyMap[key]) {
+        e.preventDefault();
+        const k = whiteKeyMap[key];
+        soundEngine.playNote(k.freq, 0.7);
+        handleSelectKey(k.pitchClass, k.note, k.keyId);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPaused, handleSelectNote, handleAcknowledgeMistake]);
+  }, [isPaused, handleSelectKey, handleAcknowledgeMistake]);
 
   // Replay current note sound
   const handleReplayNote = () => {
@@ -418,18 +514,18 @@ export default function App() {
 
           {verificationStatus === 'idle' && (
             <div className="text-xs sm:text-sm text-slate-400 flex items-center gap-1.5">
-              <span>Wskaż nazwę wyświetlonej nuty na klawiaturze muzycznej</span>
+              <span>Wskaż nutę na klawiaturze muzycznej</span>
             </div>
           )}
         </div>
 
         {/* Interactive Piano Keyboard */}
         <PianoKeyboard
-          onSelectNote={handleSelectNote}
+          onSelectKey={handleSelectKey}
           disabled={isPaused}
-          highlightCorrectNote={highlightCorrectKey}
-          displayAccidental={currentNote?.displayAccidental}
-          activeKey={activeKey}
+          highlightPitchClass={highlightCorrectPitchClass}
+          targetStep={currentNote?.step}
+          activeKeyId={activeKeyId}
         />
       </main>
 
