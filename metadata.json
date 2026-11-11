@@ -1,0 +1,6 @@
+{
+  "name": "Trener Nut na Pięciolinii",
+  "description": "Interaktywna aplikacja do nauki nut na pięciolinii z klawiaturą muzyczną, inteligentnym systemem powtórek i dźwiękiem.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
